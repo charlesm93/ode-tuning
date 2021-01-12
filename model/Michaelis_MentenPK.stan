@@ -47,14 +47,14 @@ parameters {
 transformed parameters {
   real theta[4] = {ka, V, Vm, Km};
   vector[N] concentration;
-  
+
   {
     real x[N, n_cmt];
     if (!stiff_solver) {
-      x = integrate_ode_rk45(system, y0, t0, t, theta, x_r, x_i);  //,
+      x = integrate_ode_rk45(system, y0, t0, t, theta, x_r, x_i);
                              // rel_tol, abs_tol, max_num_steps);
     } else {
-      x = integrate_ode_bdf(system, y0, t0, t, theta, x_r, x_i);  // ,
+      x = integrate_ode_bdf(system, y0, t0, t, theta, x_r, x_i);
                             // rel_tol, abs_tol, max_num_steps);
     }
 
@@ -64,10 +64,10 @@ transformed parameters {
 
 model {
   // priors -- CHECK if these are reasonable values
-  ka ~ lognormal(log(1.5), 1.85);
+  ka ~ lognormal(log(2.5), 3);  // 1.85
   V ~ lognormal(log(35), 0.5);
   Vm ~ lognormal(log(10), 0.5);
-  Km ~ lognormal(log(2.5), 2);
+  Km ~ lognormal(log(2.5), 3);  // 2
   sigma ~ normal(0, 1);
 
   // likelihood

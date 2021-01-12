@@ -3,17 +3,15 @@ rm(list = ls())
 gc()
 set.seed(1954)
 
-setwd("~/Code/ode-experiment/")
+setwd("~/Code/ode-tuning")
 .libPaths("~/Rlib/")
 
 library(ggplot2)
-# library(parallel)
-# library(deSolve)
 library(cmdstanr)
 set_cmdstan_path("~/Rlib/cmdstan/")
 library(rjson)
 library(posterior)
-source("stanTools.r")
+# source("stanTools.r")
 
 model_name <- "Michaelis_MentenPK"
 
@@ -65,26 +63,26 @@ stan_data <- fromJSON(file = "data/PKModel.data.json")
 
 init <- function() {
   list(
-    ka = exp(rnorm(1, log(1.5), 1)),
+    ka = exp(rnorm(1, log(1.5), 3)),
     V = exp(rnorm(1, log(35), 0.5)),
     Vm = exp(rnorm(1, log(10), 0.5)),
-    Km = exp(rnorm(1, log(2.5), 1.5)),
-    sigma = abs(rnorm(1, 0, 0.1))
+    Km = exp(rnorm(1, log(2.5), 3)),
+    sigma = abs(rnorm(1, 0, 1))
   )
 }
 
-# with(data, stan_rdump(ls(data), "data/disease_data.r"))
-# for (i in 1:nChains) {
-#   init_list <- init()
-#   with(init_list, stan_rdump(ls(init_list),
-#     paste0("output/init.", i, ".r"))
+# init <- function() { 
+#   list(
+#     ka = exp(rnorm(1, log(2.5), 1)),
+#     V = exp(rnorm(1, log(35), 0.5)), 
+#     Vm = exp(rnorm(1, log(10), 0.5)), 
+#     Km = exp(rnorm(1, log(2.5), 1.5)), 
+#     sigma = abs(rnorm(1, 0, 0.1))) 
 # }
-# init1 <- init()
-# with(init1, stan_rdump(ls(init1), "output/init.1.r"))
 
-nChains <- 4
-iter_warmup <- 500
-iter_sampling <- 500
+nChains <- 8
+iter_warmup <- 1000
+iter_sampling <- 1000
 
 ## Compile model
 if (TRUE) {
@@ -92,40 +90,40 @@ if (TRUE) {
   mod <- cmdstan_model(file)
 }
 
-stan_data$stiff_solver <- 1  # 0 if using rk45.
 
-# With rk45, get many warning messages and divergent transitions.
-# These go away when using the bdf solver.
+stan_data$stiff_solver <- 0
+fit0 <- mod$sample(
+    data = stan_data, chains = nChains,
+    parallel_chains = nChains,
+    iter_warmup = iter_warmup, iter_sampling = iter_sampling,
+    seed = 123, adapt_delta = 0.8,
+    init = init)
+
+fit0$save_object(paste0("output/", model_name, ".rk45.fit.RDS"))
+
+fit0$cmdstan_diagnose()
+fit0$time()
+
+stan_data$stiff_solver <- 1
 fit <- mod$sample(
-  data = stan_data, parallel_chains = nChains,
+  data = stan_data, chains = nChains,
+  parallel_chains = nChains,
   iter_warmup = iter_warmup, iter_sampling = iter_sampling,
   seed = 123, adapt_delta = 0.8, init = init)
 
-fit$save_object(paste0("output/", model_name, ".fit.RDS"))
+fit$save_object(paste0("output/", model_name, ".bdf.fit.RDS"))
 
 fit$cmdstan_diagnose()
+fit$time()
 
 mass_matrix <- fit$inv_metric()
 step_size <- fit$metadata()$step_size_adaptation
-
-# stanfit <- read_stan_csv(fit$output_files())
-# saveRDS(stanfit, file = file.path("output", "fit_bdf.RSave"))
-
-# extract warmed up parameters
-# sampler_parameters <- get_sampler_params(stanfit, inc_warmup = FALSE)
-# divergence_by_chain <- sapply(sampler_parameters, 
-#                               function(x) sum(x[, "divergent__"]))
-# 
-# step_size_by_chain <- sapply(sampler_parameters,
-#                              function(x) mean(x[, "stepsize__"]))
-# mass_matrix <- get_mass_matrix(stanfit, nChains = 1)
-
 
 stan_data2 <- stan_data
 stan_data2$stiff_solver <- 0
 
 # Create init files, using warmup samples and save them.
-# CHECK -- are the draws ordered?
+# CHECK -- the draws should be ordered
 samples <- fit$draws()
 parm_index <- 2:6
 for (i in 1:nChains) {
@@ -138,70 +136,32 @@ for (i in 1:nChains) {
   write_stan_json(init, paste0("init/init", i, ".json"))
 }
 
-# samples <- extract(stanfit, permute = FALSE)
-# init2 <- list(ka = samples[1, 1, 1],
-#               V = samples[1, 1, 2],
-#               Vm = samples[1, 1, 3],
-#               Km = samples[1, 1, 4],
-#               sigma = samples[1, 1, 4])
-# with(init2, stan_rdump(ls(init2), "output/init2.R"))
-
-# FIX ME -- need different init for each chain
-# fit2 <- mod$sample(
-#   data = stan_data2, num_chains = nChains,
-#   num_warmup = 0, num_samples = n_samples, seed = 234,
-#   init = file.path("output", "init2.R"),
-#   stepsize = step_size_by_chain[1],  # FIX ME -- should be a different step size
-#   inv_metric = mass_matrix[[1]],
-#   adapt_engaged = FALSE  # just in case...
-# )
-
 fit2 <- mod$sample(
-  data = stan_data2, parallel_chains = nChains,
-  iter_warmup = 0, iter_sampling = iter_sampling, seed = 234,
-  init = file.path("output", "init2.R"),
-  step_size = step_size[1],  # FIX ME -- should be a different step size
+  data = stan_data2, chains = nChains,
+  parallel_chains = nChains,
+  iter_warmup = 0, iter_sampling = iter_sampling,
+  seed = 123,
+  init = paste0("init/init", 1:nChains, ".json"),
+  step_size = step_size,
   inv_metric = diag(mass_matrix[[1]]),
   adapt_engaged = FALSE  # just in case...
 )
 
-# fit2 <- mod$sample(
-#   data = stan_data2, parallel_chains = nChains,
-#   iter_warmup = 0, iter_sampling = iter_sampling, 
-#   seed = 123,
-#   init = paste0("init/init", 1:nChains, ".json"),
-#   step_size = step_size,
-#   inv_metric = diag(mass_matrix[[1]]),
-#   adapt_engaged = FALSE  # just in case...
-# )
+fit2$save_object(paste0("output/", model_name,
+                        ".rk45_sampling.fit.RDS"))
 
-fit2$save_object(paste0("output/", model_name, ".fit2.RDS"))
-
-fit$cmdstan_diagnose()
-
-# data = stan_data, parallel_chains = nChains,
-# iter_warmup = 500, iter_sampling = 500, seed = 123,
-# adapt_delta = 0.8, init = init)
-
-# stanfit2 <- read_stan_csv(fit2$output_files())
-# saveRDS(stanfit2, file = file.path("output", "fit.RSave"))
+fit2$cmdstan_diagnose()
+fit2$time()
 
 #####################################################################
-# Let's compare the samples
+# Make the posterior samples are consistent between methods.
 parms <- c("ka", "V", "Vm", "Km", "sigma")
 samples <- as_draws_df(fit$draws(variables = parms))
 samples2 <- as_draws_df(fit2$draws(variables = parms))
 
 samples_bdf <- with(samples, c(ka, V, Vm, Km, sigma))
 samples_mixed <- with(samples2, c(ka, V, Vm, Km, sigma))
-samples_all <- c(samples_bdf, samples_all)
-
-# samples <- extract(stanfit)
-# samples2 <- extract(stanfit2)
-# 
-# samples_bdf <- with(samples, c(ka, V, Vm, Km, sigma))
-# samples_rk45 <- with(samples2, c(ka, V, Vm, Km, sigma))
-# samples_total <- c(samples_bdf, samples_rk45)
+samples_all <- c(samples_bdf, samples_mixed)
 
 # parameters <- c("ka", "V", "Vm", "Km", "sigma")
 total_samples <- length(samples_bdf)
@@ -218,18 +178,20 @@ plot <- ggplot(data = plot_data,
   theme_bw() + facet_wrap(~ parm, scale = "free")
 plot
 
-# Examine summary of the samples (we care about parm 2 - 6)
+#####################################################################
+# Examine efficiency (we care about parm 2 - 6)
+ess_bulk <- fit0$summary()$ess_bulk[2:6]
+eff0 <- ess_bulk / fit0$time()$total # max(fit0$time()$chains[, 4])
+
 ess_bulk <- fit$summary()$ess_bulk[2:6]
-eff1 <- ess_bulk / max(fit$time()$chains[, 4])
-# eff1 <- ess_bulk / max(get_elapsed_time(stanfit)[, 2])
+eff1 <- ess_bulk / fit$time()$total # max(fit$time()$chains[, 4])
 
 ess_bulk2 <- fit2$summary()$ess_bulk[2:6]
-eff2 <- ess_bulk2 / max(fit2$time()$chains[, 4])
-# eff2 <- ess_bulk2 / max(get_elapsed_time(stanfit2)[, 2])
+eff2 <- ess_bulk2 / max(fit$time()$chains[, 2]) + fit2$time()$total
 
-eff <- c(eff1, eff2)
-parm <- rep(parms, 2)
-method <- rep(c("bdf", "mixed"), each = length(parms))
+eff <- c(eff0, eff1, eff2)
+parm <- rep(parms, 3)
+method <- rep(c("rk45", "bdf", "mixed"), each = length(parms))
 plot_data <- data.frame(eff = eff, parm = parm, method = method)
 
 plot <- ggplot(data = plot_data,
