@@ -13,13 +13,15 @@ library(rjson)
 library(posterior)
 library(deSolve)
 library(bayesplot)
+source("tools.r")
+
 
 model_name <- "Michaelis_MentenPK"
 
 #####################################################################
 ## Simulate data
 
-simulate_data <- TRUE
+simulate_data <- FALSE
 if (simulate_data) {
   # simulate data
   # ka <- exp(rnorm(1, log(1), 1))
@@ -74,7 +76,7 @@ stan_data_bdf <- stan_data_rk45
 stan_data_bdf$stiff_solver <- 1
 
 #####################################################################
-## Build inits (we'll use the same inits for model fit)
+## Build inits (we'll use the same inits for all the fits)
 
 init <- function() {
   list(
@@ -105,153 +107,151 @@ if (TRUE) {
   mod <- cmdstan_model(file)
 }
 
+stan_seed <- 123
+
+metric <- "dense_e"  # "diag_e"
+
+init0_files <- paste0("init/init", 1:nChains, ".json")
+
 #####################################################################
 ## Fit model with rk45 solver.
 
 run_model <- TRUE
-saved_fit0_file <- paste0("output/", model_name, ".rk45.fit.RDS")
+saved_fit0_file <- paste0("output/", model_name, "rk45")
 if (run_model) {
-  fit0 <- mod$sample(
-      data = stan_data_rk45, chains = nChains,
-      parallel_chains = parallel_chains,
-      iter_warmup = iter_warmup, iter_sampling = iter_sampling,
-      seed = 123, adapt_delta = 0.8,
-      init = paste0("init/init", 1:nChains, ".json"))
+  fit0_warmups <- fit_warmup_phases(mod = mod, 
+                                    model_name = model_name,
+                                    data = stan_data_rk45,
+                                    init = init0_files,
+                                    iter_warmup = 500,
+                                    init_buffer = 75,
+                                    term_buffer = 50,
+                                    nChains = nChains,
+                                    seed = stan_seed,
+                                    metric = metric)
 
-  fit0$cmdstan_diagnose()
+  fit0_warmups$fit_w1$save_object(paste0(saved_fit0_file, ".phase1.fit.RDS"))
+  fit0_warmups$fit_w2$save_object(paste0(saved_fit0_file, ".phase2.fit.RDS"))
+  fit0_warmups$fit_w1$save_object(paste0(saved_fit0_file, ".phase3.fit.RDS"))
   
-  fit0$save_object(saved_fit0_file)
+  samples_warmup <- fit0_warmups$fit_w1$draws()
+  parm_index <- 2:6
+  init_files <- save_last_iter(samples_w1, nChains, paste0(model_name, "_w3."),
+                               parm_index)
+
+  fit0 <- mod$sample(
+    data = stan_data_rk45, chains = nChains,
+    parallel_chains = parallel_chains,
+    iter_warmup = 0, iter_sampling = iter_sampling,
+    seed = stan_seed, adapt_delta = 0.8,
+    init = init_files,
+    metric = metric,
+    step_size = fit0_warmups$fit_w3$metadata()$step_size_adaptation,
+    inv_metric = fit0_warmups$fit_w3$inv_metric(matrix = F),
+    adapt_engaged = FALSE)
+  
+  fit0$save_object(paste0(saved_fit0_file, ".RDS"))
 }
 
-fit0 <- readRDS(saved_fit0_file)
-fit0$time()
-fit0$metadata()$step_size_adaptation
+fit0 <- readRDS(paste0(saved_fit0_file, ".RDS"))
+
 
 #####################################################################
 ## Fit model with bdf solver
 
-saved_fit1_file <- paste0("output/", model_name, ".bdf.fit.RDS")
+saved_fit1_file <- paste0("output/", model_name, "bdf")
 if (run_model) {
-  fit <- mod$sample(
+  fit1_warmups <- fit_warmup_phases(mod = mod, 
+                                    model_name = paste0(model_name, "_bdf"),
+                                    data = stan_data_bdf,
+                                    init = init0_files,
+                                    iter_warmup = 500,
+                                    init_buffer = 75,
+                                    term_buffer = 50,
+                                    nChains = nChains,
+                                    seed = stan_seed,
+                                    metric = metric)
+  
+  fit1_warmups$fit_w1$save_object(paste0(saved_fit1_file, ".phase1.fit.RDS"))
+  fit1_warmups$fit_w2$save_object(paste0(saved_fit1_file, ".phase2.fit.RDS"))
+  fit1_warmups$fit_w1$save_object(paste0(saved_fit1_file, ".phase3.fit.RDS"))
+  
+  samples_warmup <- fit1_warmups$fit_w1$draws()
+  parm_index <- 2:6
+  init_files <- save_last_iter(samples_warmup, nChains, paste0(model_name, "_w3."),
+                               parm_index)
+  
+  fit1 <- mod$sample(
     data = stan_data_bdf, chains = nChains,
     parallel_chains = parallel_chains,
-    iter_warmup = iter_warmup, iter_sampling = iter_sampling,
-    seed = 123, adapt_delta = 0.8,
-    init = paste0("init/init", 1:nChains, ".json"))
+    iter_warmup = 0, iter_sampling = iter_sampling,
+    seed = stan_seed + 1, 
+    adapt_delta = 0.8,
+    init = init_files,
+    metric = metric,
+    step_size = fit1_warmups$fit_w3$metadata()$step_size_adaptation,
+    inv_metric = fit1_warmups$fit_w3$inv_metric(matrix = F),
+    adapt_engaged = FALSE)
 
-  fit$cmdstan_diagnose()
-  
-  fit$save_object(saved_fit1_file)
+  fit1$save_object(paste0(saved_fit1_file, ".RDS"))
 }
-  
-fit <- readRDS(saved_fit1_file)
-fit$time()
+
+fit1 <- readRDS(paste0(saved_fit1_file, ".RDS"))
 
 #####################################################################
 ## Run sampling with rk45, using tuning parameters warmed up with bdf.
 
-mass_matrix <- fit$inv_metric()
-step_size <- fit$metadata()$step_size_adaptation
-
-# stan_data2 <- stan_data
-# stan_data2$stiff_solver <- 0
-
-# Create init files, using warmup samples and save them.
-# CHECK -- the draws should be ordered
-samples <- fit$draws()
-parm_index <- 2:6
-for (i in 1:nChains) {
-  init_saved <- list(ka = samples[1, i, parm_index[1]],
-                     V = samples[1, i, parm_index[2]],
-                     Vm = samples[1, i, parm_index[3]],
-                     Km = samples[1, i, parm_index[4]],
-                     sigma = samples[1, i, parm_index[5]])
-
-  write_stan_json(init_saved, paste0("init/warm_init", i, ".json"))
-}
-
-saved_fit2_file <- paste0("output/", model_name, ".rk45_sampling.fit.RDS")
+saved_fit2_file <- paste0("output/", model_name, "rk45_sampling")
 if (run_model) {
   fit2 <- mod$sample(
     data = stan_data_rk45, chains = nChains,
     parallel_chains = parallel_chains,
     iter_warmup = 0, iter_sampling = iter_sampling,
-    seed = 123,
-    init = paste0("init/warm_init", 1:nChains, ".json"),
-    step_size = step_size,
-    inv_metric = fit$inv_metric(matrix = F),
-    adapt_engaged = FALSE  # just in case...
-  )
+    seed = 123, adapt_delta = 0.8,
+    init = init_files,
+    step_size = fit1_warmups$fit_w3$metadata()$step_size_adaptation,
+    inv_metric = fit1_warmups$fit_w3$inv_metric(matrix = F),
+    adapt_engaged = FALSE)
 
-  fit2$cmdstan_diagnose()
-
-  fit2$save_object(saved_fit2_file)
+  fit2$save_object(paste0(saved_fit2_file, ".RDS"))
 }
 
-
-fit2 <- readRDS(saved_fit2_file)
-fit2$time()
-
 #####################################################################
-## Same as above, except we use a short warmup with bdf, and do more
-## warmup with rk45.
-
-partial_warmup <- 200
-
-saved_fit_warmup_file <- paste0("output/", model_name, ".bdf_warmup.fit.RDS")
-saved_fit3_file <- paste0("output/", model_name, ".rk45_cool.fit.RDS")
+## Run rk45 for phase 3 and sampling.
+saved_fit3_file <- paste0("output/", model_name, "rk45_cool")
 if (run_model) {
-  fit_warmup <- mod$sample(
-    data = stan_data_bdf, chains = nChains,
-    parallel_chains = parallel_chains,
-    iter_warmup = partial_warmup, iter_sampling = 1,
-    seed = 123,
-    init = paste0("init/init", 1:nChains, ".json"))
+  init_files_w2_bdf <- paste0("init/", model_name, "_bdf_w2.", 1:nChains, ".json")
 
-  fit_warmup$save_object(saved_fit_warmup_file)
+  fit_rk45_w3 <- mod$sample(data = stan_data_rk45, 
+                            init = init_files_w2_bdf,
+                            chains = nChains, parallel_chains = parallel_chains,
+                            iter_sampling = 1,
+                            iter_warmup = 50, window = 0,
+                            init_buffer = 0, term_buffer = 50,
+                            seed = 123,
+                            step_size = fit1_warmups$fit_w2$metadata()$step_size_adaptation,
+                            inv_metric = fit1_warmups$fit_w2$inv_metric(matrix = F))
   
-  samples <- fit_warmup$draws()
-  parm_index <- 2:6
-  for (i in 1:nChains) {
-    init_saved <- list(ka = samples[1, i, parm_index[1]],
-                       V = samples[1, i, parm_index[2]],
-                       Vm = samples[1, i, parm_index[3]],
-                       Km = samples[1, i, parm_index[4]],
-                       sigma = samples[1, i, parm_index[5]])
+  fit_rk45_w3$save_object(paste0(saved_fit3_file, ".phase3.fit.RDS"))
   
-    write_stan_json(init_saved, paste0("init/cool_init", i, ".json"))
-  }
-
-  mass_matrix <- fit_warmup$inv_metric()
-  step_size <- fit_warmup$metadata()$step_size_adaptation
-
   fit3 <- mod$sample(
     data = stan_data_rk45, chains = nChains,
     parallel_chains = parallel_chains,
-    iter_warmup = iter_warmup - partial_warmup,
-    iter_sampling = iter_sampling,
-    seed = 123,
-    init = paste0("init/cool_init", 1:nChains, ".json"),
-    step_size = step_size,
-    inv_metric = fit_warmup$inv_metric(matrix = F)
-    # inv_metric = diag(mass_matrix[[1]])
-  )
+    iter_warmup = 0, iter_sampling = iter_sampling,
+    seed = 123, adapt_delta = 0.8,
+    init = init_files,
+    step_size = fit_rk45_w3$metadata()$step_size_adaptation,
+    inv_metric = fit_rk45_w3$inv_metric(matrix = F),
+    adapt_engaged = FALSE)
 
-  fit3$cmdstan_diagnose()  
-  fit3$save_object(saved_fit3_file)
+  fit3$save_object(paste0(saved_fit3_file, ".RDS"))
 }
-
-fit_warmup <- readRDS(saved_fit_warmup_file)
-fit_warmup$time()
-
-fit3 <- readRDS(saved_fit3_file)
-fit3$time()
 
 #####################################################################
 # Make sure the posterior samples are consistent between methods.
 parms <- c("ka", "V", "Vm", "Km", "sigma", "lp__")
 samples0 <- as_draws_df(fit0$draws(variables = parms))
-samples1 <- as_draws_df(fit$draws(variables = parms))
+samples1 <- as_draws_df(fit1$draws(variables = parms))
 samples2 <- as_draws_df(fit2$draws(variables = parms))
 samples3 <- as_draws_df(fit3$draws(variables = parms))
 
@@ -273,24 +273,40 @@ plot_data <- data.frame(samples = samples_all,
 
 plot <- ggplot(data = plot_data,
                aes(x = samples, color = method, fill = method)) +
-  geom_histogram(alpha = 0.5, position = "identity", bins = 30) +
+  geom_histogram(alpha = 0.25, position = "identity", bins = 30) +
   theme_bw() + facet_wrap(~ parm, scale = "free")
 plot
 
 #####################################################################
 # Examine global efficiency (include lp__) -- meaning the run time
 # is taken to be the total, i.e. worst run time.
-ess_bulk <- fit0$summary()$ess_bulk[1:6]
-eff0 <- ess_bulk / fit0$time()$total # max(fit0$time()$chains[, 4])
 
-ess_bulk <- fit$summary()$ess_bulk[1:6]
-eff1 <- ess_bulk / fit$time()$total # max(fit$time()$chains[, 4])
+ess_bulk <- fit0$summary()$ess_bulk[1:6]
+time0_total <- (fit0$time()$total +
+                fit0_warmups$fit_w1$time()$total +
+                fit0_warmups$fit_w2$time()$total +
+                fit0_warmups$fit_w3$time()$total)
+eff0 <- ess_bulk / time0_total
+
+
+bdf_warmup_time <- fit1_warmups$fit_w1$time()$total +
+                     fit1_warmups$fit_w2$time()$total +
+                     fit1_warmups$fit_w3$time()$total
+
+ess_bulk <- fit1$summary()$ess_bulk[1:6]
+time1_total <- fit1$time()$total + bdf_warmup_time
+eff1 <- ess_bulk / time1_total
 
 ess_bulk2 <- fit2$summary()$ess_bulk[1:6]
-eff2 <- ess_bulk2 / (max(fit$time()$chains[, 2]) + fit2$time()$total)
+time2_total <- fit2$time()$total + bdf_warmup_time
+eff2 <- ess_bulk2 / time2_total
 
 ess_bulk3 <- fit3$summary()$ess_bulk[1:6]
-eff3 <- ess_bulk3 / (max(fit_warmup$time()$chains[, 2]) + fit3$time()$total)
+time3_total <- fit3$time()$total +
+  fit1_warmups$fit_w1$time()$total +
+  fit1_warmups$fit_w2$time()$total +
+  fit_rk45_w3$time()$total
+eff3 <- ess_bulk3 / time3_total
 
 eff <- c(eff0, eff1, eff2, eff3)
 parm <- rep(parms, 4)
@@ -306,66 +322,33 @@ plot <- ggplot(data = plot_data,
 plot
 
 
-#####################################################################
-# Let's now compute the mean ESS (with sd)
+###############################################################################
+# Central and worse-case scenario metrics don't tell the whole story.
+# Let's plot all the points (for one "representative parameter")
+# Need now to extract the run time per chain.
 
-ess_summary <- function(fit, parms, nChains, time) {
-  n_parm <- length(parms)
-  draws <- fit$draws(variables = parms)
-  chain_ess <- matrix(NA, n_parm, nChains)
-  chain_eff <- matrix(NA, n_parm, nChains)
-  for (i in 1:nChains) {
-    chain_draw <- as_draws_df(draws[, i, ])
-    chain_ess[, i] <- dplyr::pull(summarize_draws(chain_draw, 
-                                  measure = c("ess_bulk")), 2) 
-    chain_eff[, i] <- chain_ess[, i] / time[i]
-  }
-  
-  mean_ess <- rep(NA, n_parm)
-  sd_ess <- rep(NA, n_parm)
-  for (i in 1:n_parm) {
-    mean_ess[i] <- mean(chain_eff[i, ])
-    sd_ess[i] <- sd(chain_eff[i, ])
-  }
+parm_index <- 1
 
-  list(chain_ess = chain_ess, chain_eff = chain_eff,
-       mean_ess = mean_ess, sd_ess = sd_ess)
-}
-
-time0 <- fit0$time()$chains[, 4]
+time0 <- (fit0$time()$chains[, 4] +
+            fit0_warmups$fit_w1$time()$chains[, 4] +
+            fit0_warmups$fit_w2$time()$chains[, 4] +
+            fit0_warmups$fit_w3$time()$chains[, 4])
 ess0 <- ess_summary(fit = fit0, parms, nChains, time0)
 
-time1 <- fit$time()$chains[, 4]
-ess1 <- ess_summary(fit = fit, parms, nChains, time1)
+bdf_warmup_time <- fit1_warmups$fit_w1$time()$chains[, 4] +
+  fit1_warmups$fit_w2$time()$chains[, 4] +
+  fit1_warmups$fit_w3$time()$chains[, 4]
 
-time2 <- fit2$time()$chains[, 3] + fit$time()$chains[, 2] 
+time1 <- fit1$time()$chains[, 4] + bdf_warmup_time
+ess1 <- ess_summary(fit = fit1, parms, nChains, time1)
+
+time2 <- fit2$time()$chains[, 4] + bdf_warmup_time
 ess2 <- ess_summary(fit = fit2, parms, nChains, time2)
 
-time3 <- fit3$time()$chains[, 4] + fit_warmup$time()$chains[, 2]
-ess3 <- ess_summary(fit = fit2, parms, nChains, time3)
-
-# Let's examine only parameter (assuming it tells the same story)
-parm_index <- 6
-mean_ess <- c(ess0$mean_ess[parm_index],
-              ess1$mean_ess[parm_index],
-              ess2$mean_ess[parm_index], 
-              ess3$mean_ess[parm_index])
-
-sd_ess <- c(ess0$sd_ess[parm_index],
-            ess1$sd_ess[parm_index],
-            ess2$sd_ess[parm_index], 
-            ess3$sd_ess[parm_index])
-
-method <- c("rk45", "bdf", "warm start", "room start")
-
-plot <- ggplot(data = data.frame(method = method, mean_ess = mean_ess),
-               aes(x = method, y = mean_ess)) + theme_bw() +
-  geom_bar(stat = "identity", width = 0.3, alpha = 0.8,
-           position = "dodge") + theme_bw() +
-  geom_errorbar(aes(ymin = mean_ess - sd_ess, ymax = mean_ess + sd_ess))
-plot
-
-# central metrics are not good summaries. Let's try plotting all the points.
+time3 <- fit3$time()$chains[, 4] + fit1_warmups$fit_w1$time()$chains[, 4] +
+  fit1_warmups$fit_w2$time()$chains[, 4] +
+  fit_rk45_w3$time()$chains[, 4]
+ess3 <- ess_summary(fit = fit3, parms, nChains, time3)
 
 recorded_eff <- c(ess0$chain_eff[parm_index, ],
                   ess1$chain_eff[parm_index, ],
@@ -387,10 +370,10 @@ recorded_tau <- c(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ],
                   ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ],
                   ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ])
 
-median_tau <- c(mean(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ]),
-                mean(ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ]),
-                mean(ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ]),
-                mean(ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ]))
+median_tau <- c(median(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ]),
+                median(ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ]),
+                median(ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ]),
+                median(ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ]))
 
 plot_data <- data.frame(method = method, tau = recorded_tau)
 
@@ -429,32 +412,31 @@ plot <- ggplot(data = plot_data[method == "rk45" | method == "bdf", ],
 plot
 
 
-plot_run_time <- function(fit_object) {
-  time_data <- fit_object$time()$chains
-  run_times <- c(time_data$warmup, time_data$sampling)
-  chain_id <- rep(time_data$chain_id, 2)
-  phase <- rep(c("warmup", "sampling"), each = nChains)
+time0_data <- c(fit0_warmups$fit_w1$time()$chains[, 4],
+                fit0_warmups$fit_w2$time()$chains[, 4],
+                fit0_warmups$fit_w3$time()$chains[, 4],
+                fit0$time()$chains[, 4])
 
-  plot_data <- data.frame(run_times = run_times,
-                          chain_id = chain_id,
-                          phase = phase)
+time1_data <- c(fit1_warmups$fit_w1$time()$chains[, 4],
+                fit1_warmups$fit_w2$time()$chains[, 4],
+                fit1_warmups$fit_w3$time()$chains[, 4],
+                fit1$time()$chains[, 4])
 
-  plot <- ggplot(data = plot_data, 
-                 aes(x = chain_id, y = run_times, fill = phase)) +
-    geom_bar(stat = "identity", position = "stack", width = 0.3) +
-    coord_flip() + theme_bw() +
-    ylab("Run time (s)") + xlab("Chain ID") +
-    theme(text = element_text(size = 16))
-  plot
+chain_id <- rep(1:nChains, 4)
+phase <- rep(c("Phase 1", "Phase 2", "Phase 3", "sampling"), each = nChains)
+phase <- factor(phase, levels = c("sampling", "Phase 3", "Phase 2", "Phase 1"))
+
+plot_phase_time(run_times = time0_data, chain_id, phase) 
+plot_phase_time(run_times = time1_data, chain_id, phase)
+
+# TODO: change color scheme of ggplot2
+
+if (FALSE) {
+  plot_run_time(fit0) + ylim(0, 125)
+  plot_run_time(fit) + ylim(0, 125)
+
+  plot_run_time(fit2)
+  plot_run_time(fit3)
 }
-
-plot_run_time(fit0) + ylim(0, 125)
-plot_run_time(fit) + ylim(0, 125)
-
-bayesplot::mcmc_trace
-
-plot_run_time(fit2)
-plot_run_time(fit3)
-
 
 
