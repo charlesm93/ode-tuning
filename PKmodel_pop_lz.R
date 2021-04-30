@@ -104,11 +104,9 @@ seed_list = 1:MC
 
 model <- stan_model(file)
 
-fit_pathfinder = FALSE
-run_model_pf = FALSE
-
 #######################################################################
-## fit pathfinder with bdf ##
+## fit pathfinder with bdf solver ##
+fit_pathfinder = FALSE
 if(fit_pathfinder){
   
   t <- proc.time()
@@ -137,9 +135,9 @@ if(fit_pathfinder){
 
 #####################################################################
 ## Fit model with bdf solver and initials from Pathfinder
-
 saved_fit_pf_bdf_file <- 
   paste0("./output/", model_name, ".pf_bdf.fit.RDS")
+run_model_pf = FALSE
 if (run_model_pf) {
   fit_pf_bdf <- mod$sample(
     data = stan_data_bdf, chains = nChains,
