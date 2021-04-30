@@ -117,6 +117,8 @@ if(fit_pathfinder){
   
   pick_samples_bdf <- Imp_Resam_WOR(opath_bdf, n_inits = 4, seed = 1)
   
+  pick_Hk <- est_inv_metric(opath_bdf) # poor estimate of the mass matrix
+  
   posterior <- to_posterior(model, stan_data_bdf)
   init_pf = apply(pick_samples_bdf, 2, 
                   f <- function(x){constrain_pars(posterior, x)})
