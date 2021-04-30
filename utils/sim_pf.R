@@ -362,7 +362,8 @@ Form_N_apx <- function(x_center, Ykt, Skt, Dk, thetak, E, lmm){
     
     sample_pkg <- list(label = "full", cholHk = cholHk, 
                        logdetcholHk = logdetcholHk,
-                       x_center = x_center)
+                       x_center = x_center,
+                       inv_metric_est = Hk)
     
   } else {
     # use equation ?? to sample
@@ -378,12 +379,22 @@ Form_N_apx <- function(x_center, Ykt, Skt, Dk, thetak, E, lmm){
     Rktilde = chol(Rkbar %*% Mkbar %*% t(Rkbar) + diag(nrow(Rkbar)))
     logdetcholHk = sum(log(diag(Rktilde))) + 0.5 * sum(log(E))
     
+    # calculate Hk for estimating mass matrix #
+    Hk = diag(E, nrow = D) + 
+      crossprod(Ykt %*% diag(E, nrow = D), ninvRST) + 
+      crossprod(ninvRST, Ykt %*% diag(E, nrow = D))  + 
+      crossprod(ninvRST, 
+                (diag(Dk) + 
+                   tcrossprod(Ykt %*% diag(sqrt(E), nrow = D))) %*% 
+                  ninvRST)
+    
     sample_pkg <- list(label = "sparse", theta_D = 1 / E,
                        Qk = Qk, Rktilde = Rktilde,
                        logdetcholHk = logdetcholHk,
                        Mkbar = Mkbar,
                        Wkbart = Wkbart,
-                       x_center = x_center)
+                       x_center = x_center,
+                       inv_metric_est = Hk) #inv_metric_est is returned for estimating mass matrix 
   }
   return(sample_pkg)
 }
@@ -592,27 +603,27 @@ extract_log_ratio <- function(param_path){
 }
 
 
-#' pick_inv_mass <- function(param_path){
-#'   
-#'   #' Extract the inverse Hessian approximation of the normal approximation
-#'   #' with the highest ELBO 
-#'   #' param_path: output of function opt_path_stan_parallel()
-#' 
-#'   # remove the failed Pathfinder
-#'   check <- sapply(param_path, f <- function(x){
-#'     work <- is.finite(x$lp_apx_draws[[1]])
-#'     work
-#'   })
-#'   
-#'   filter_mode <- c(1:length(check))[check]
-#'   param_path <- param_path[filter_mode]
-#'   
-#'   # find the index of the normal approximation with the higest ELBO 
-#'   ELBO <- apply(sapply(param_path, extract_log_ratio), 2, mean)
-#'   pick_index <- which.max(ELBO)
-#'   
-#'   return(param_path[[pick_index]]$sample_pkg_save$inv_mass_est)
-#'   
-#' }
+est_inv_metric <- function(param_path){
+
+  #' Extract the inverse Hessian approximation of the normal approximation
+  #' with the highest ELBO
+  #' param_path: output of function opt_path_stan_parallel()
+
+  # remove the failed Pathfinder
+  check <- sapply(param_path, f <- function(x){
+    work <- is.finite(x$lp_apx_draws[[1]])
+    work
+  })
+
+  filter_mode <- c(1:length(check))[check]
+  param_path <- param_path[filter_mode]
+
+  # find the index of the normal approximation with the higest ELBO
+  ELBO <- apply(sapply(param_path, extract_log_ratio), 2, mean)
+  pick_index <- which.max(ELBO)
+
+  return(param_path[[pick_index]]$sample_pkg_save$inv_metric_est)
+
+}
 
 
