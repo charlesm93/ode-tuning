@@ -92,11 +92,11 @@ library(foreach)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 source("./utils/sim_pf.R")
-N1 = 1000    # maximum iters in optimization
-factr_tol = 1e2 # relative tolerance = 1-4 is not enough, should use at least 1e7
-N_sam_DIV = 3   # samples for ELBO evaluation
+N1 = 1000       # maximum iters in optimization
+factr_tol = 1e2 
+N_sam_DIV = 3   # sample size for ELBO evaluation
 N_sam = 100
-lmm = 6 # histogram size
+lmm = 6         # histogram size
 mc.cores = parallel::detectCores() - 2
 MC = 10    
 init_bound = 2
@@ -161,5 +161,10 @@ fit_bdf$time()
 
 table(fit_pf_bdf$sampler_diagnostics()[, , "treedepth__"])
 table(fit_bdf$sampler_diagnostics()[, , "treedepth__"])
+
+
+
+
+
 
 
