@@ -15,7 +15,7 @@ library(deSolve)
 library(bayesplot)
 source("tools.r")
 
-model_name <- "Michaelis_MentenPK_pop"
+model_name <- "Michaelis_MentenPK_pop_centered"
 
 #####################################################################
 ## Simulate data
@@ -100,7 +100,13 @@ init <- function() {
     sigma = abs(rnorm(1, 0, 1)),
     omega = exp(rnorm(5, log(0.25), 0.1)),
     eta = matrix(rnorm(stan_data_rk45$n_patients * 4,
-                       0, 1), 4, stan_data_rk45$n_patients)
+                       0, 1), 4, stan_data_rk45$n_patients),
+    # theta = matrix(rep(c(1, 35, 10, 2.5), stan_data_rk45$n_patients),
+    #                4, stan_data_rk45$n_patients)
+    theta = exp(matrix(rnorm(stan_data_rk45$n_patients * 4,
+                         c(log(1), log(35), log(10), log(2.5)),
+                         0.1), 4,
+                         stan_data_rk45$n_patients))
   )
 }
 
@@ -134,24 +140,41 @@ init0_files <- paste0("init/init_pop", 1:nChains, ".json")
 ## Fitmodel with bdf solver
 
 run_model <- TRUE
-saved_fit0_file <- paste0("output/", model_name, "bdf")
-if (run_model) {
+# saved_fit0_file <- paste0("output/", model_name, "bdf")
+if (FALSE) {
   fit_attempt <- mod$sample(iter_warmup = 500, iter_sampling = 500,
                             data = stan_data_rk45, init = init0_files,
                             chains = 4, parallel_chains = 4,
                             seed = stan_seed, max_treedepth = 11)
-  
+
   fit_attempt$save_object("output/fit_attempt_pop_rk45.RDS")
 
   fit_attempt$time()
 }
+
+if (FALSE) {
+  fit_attempt <- mod$sample(iter_warmup = 500, iter_sampling = 500,
+                            data = stan_data_bdf, init = init0_files,
+                            chains = 4, parallel_chains = 4,
+                            seed = stan_seed, max_treedepth = 11)
+
+  # Centered
+  if (FALSE) fit_attempt$save_object("output/fit_attempt_pop_c_bdf.RDS")
+
+  # Non-centered
+  if (FALSE) fit_attempt$save_object("output/fit_attempt_pop_bdf.RDS")
+
+  fit_attempt$time()
+}
   
-  
+
 fit_rk45 <- readRDS("output/fit_attempt_pop_rk45.RDS")
 fit_bdf <- readRDS("output/fit_attempt_pop_bdf.RDS")
+fit_bdf_c <- readRDS("output/fit_attempt_pop_c_bdf.RDS")
 
 fit_rk45$summary()
 fit_bdf$summary()
+fit_bdf_c$summary()
 
 fit_rk45$time()
 fit_bdf$time()
