@@ -626,4 +626,33 @@ est_inv_metric <- function(param_path){
 
 }
 
+select_normal_apx <- function(param_path){
+  
+  #' Select the index of the best normal approximation based on ELBO
+
+  # remove the failed Pathfinder
+  check <- sapply(param_path, f <- function(x){
+    work <- is.finite(x$lp_apx_draws[[1]])
+    work
+  })
+  
+  filter_mode <- c(1:length(check))[check]
+  param_path <- param_path[filter_mode]
+  
+  # find the index of the normal approximation with the higest ELBO
+  ELBO <- apply(sapply(param_path, extract_log_ratio), 2, mean)
+  pick_index <- which.max(ELBO)
+  
+  return(pick_index)
+  
+}
+
+check_pareto_k <- function(param_path){
+  #' conduct Pareto's k hat diagnostic for one-path Pathfinder
+  lp_ratios = - param_path$DIV_save$fn_draws -  param_path$DIV_save$lp_approx_draws
+  psis_test = psis(lp_ratios, r_eff = 1)
+  print(psis_test)
+  k <- pareto_k_values(psis_test)
+  return(k)
+} 
 
