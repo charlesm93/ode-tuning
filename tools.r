@@ -1,8 +1,10 @@
 
 library(wesanderson)
 
+# TODO: Create a saved_last_iter function which works for every model.
 # A function to extract the final sample of warmup (first sample of
 # "sampling" phases) and save it.
+# Designed for the Michaelis-Menten PK model for one individual.
 save_last_iter <- function(samples, nChains, sample_name, parm_index) {
   saved_file_name <- paste0("init/", sample_name, 1:nChains, ".json")
   for (i in 1:nChains) {
@@ -18,12 +20,48 @@ save_last_iter <- function(samples, nChains, sample_name, parm_index) {
   saved_file_name
 }
 
+# Same as above, but for population model with a centered parameterization.
+# The first sampling iteration is treated as the last warmup iteration.
+save_last_iter_pop <- function(samples, nChains, sample_name, parm_index,
+                              nIIV = 4, n_patients = 10) {
+  saved_file_name <- paste0("init/", sample_name, 1:nChains, ".json")
+  for (i in 1:nChains) {
+    init_saved <- list(ka_pop = samples[1, i, parm_index[1]],
+                       V_pop = samples[1, i, parm_index[2]],
+                       Vm_pop = samples[1, i, parm_index[3]],
+                       Km_pop = samples[1, i, parm_index[4]],
+                       sigma = samples[1, i, parm_index[5]])
+
+    omega <- rep(NA, nIIV)
+    for (j in 1:nIIV) {
+      omega[j] <- samples[1, i, parm_index[5 + j]]
+    }
+    init_saved$omega <- omega
+
+    theta <- matrix(NA, nrow = nIIV, ncol = n_patients)
+    for (j in 1:n_patients) {
+      theta[, j] <- as.vector(samples[1, i, parm_index[5 + nIIV +
+                                            ((j - 1) * nIIV + 1):(j * nIIV)]])
+    }
+    init_saved$theta <- theta
+    write_stan_json(init_saved, saved_file_name[i])
+  }
+
+  saved_file_name
+}
+
+
 # A function to run the warmup and save the fit for each phase.
-fit_warmup_phases <- function(mod, model_name, data, init = NULL,
+# save_function should either be save_last_iter or save_last_iter_pop.
+fit_warmup_phases <- function(mod, model_name, data, save_function,
+                              parm_index = 2:6,
+                              init = NULL,
                               iter_warmup = 500, 
                               init_buffer = 75,
                               term_buffer = 50, nChains = 4, seed = 123,
-                              metric = "diag_e", ...) {
+                              metric = "diag_e",
+                              adapt_delta = 0.8,
+                              ...) {
   fit_w1 <- mod$sample(data = data, init = init,
                        chains = nChains, parallel_chains = parallel_chains,
                        iter_warmup = init_buffer,
@@ -31,19 +69,19 @@ fit_warmup_phases <- function(mod, model_name, data, init = NULL,
                        init_buffer = init_buffer,
                        term_buffer = 0, window = 0,
                        metric = metric,
-                       seed = seed)
+                       seed = seed, refresh = 10, adapt_delta = adapt_delta)
   
   samples_w1 <- fit_w1$draws()
-  parm_index <- 2:6
-  init_files <- save_last_iter(samples_w1, nChains, paste0(model_name, "_w1."),
-                               parm_index)
+  init_files <- save_function(samples_w1, nChains,
+                              paste0(model_name, "_w1."),
+                              parm_index, ...)
 
   if (metric == "diag_e") {
     metric_is_matrix <- FALSE
   } else {
     metric_is_matrix <- TRUE
   }
-  
+
   window_size <- iter_warmup - (init_buffer + term_buffer)
   fit_w2 <- mod$sample(data = data, init = init_files,
                        chains = nChains, parallel_chains = parallel_chains,
@@ -53,11 +91,12 @@ fit_warmup_phases <- function(mod, model_name, data, init = NULL,
                        metric = metric,
                        seed = seed,
                        step_size = fit_w1$metadata()$step_size_adaptation,
-                       inv_metric = fit_w1$inv_metric(matrix = metric_is_matrix))
+                       inv_metric = fit_w1$inv_metric(matrix = metric_is_matrix),
+                       refresh = 10, adapt_delta = adapt_delta)
 
   samples_w2 <- fit_w2$draws()
-  init_files2 <- save_last_iter(samples_w2, nChains, paste0(model_name, "_w2."),
-                                parm_index)
+  init_files2 <- save_function(samples_w2, nChains, paste0(model_name, "_w2."),
+                               parm_index, ...)
   
   fit_w3 <- mod$sample(data = data, init = init_files2,
                        chains = nChains, parallel_chains = parallel_chains,
@@ -67,7 +106,8 @@ fit_warmup_phases <- function(mod, model_name, data, init = NULL,
                        metric = metric,
                        seed = seed,
                        step_size = fit_w2$metadata()$step_size_adaptation,
-                       inv_metric = fit_w2$inv_metric(matrix = metric_is_matrix))
+                       inv_metric = fit_w2$inv_metric(matrix = metric_is_matrix),
+                       refresh = 10, adapt_delta = adapt_delta)
   
   # Return
   list(fit_w1 = fit_w1, fit_w2 = fit_w2, fit_w3 = fit_w3)
@@ -119,11 +159,14 @@ plot_run_time <- function(fit_object, time_data) {
   plot
 }
 
-plot_phase_time <- function(run_times, chain_id, phase) {
+plot_phase_time <- function(run_times, chain_id, phase,
+                            integrator = NULL) {
   plot_data <- data.frame(run_times = run_times,
                           chain_id = chain_id,
                           phase = phase)
   
+  if (!is.null(integrator)) plot_data$integrator <- integrator
+
   plot <- ggplot(data = plot_data, 
                  aes(x = chain_id, y = run_times, fill = phase)) +
     geom_bar(stat = "identity", position = "stack", width = 0.3) +
@@ -131,6 +174,11 @@ plot_phase_time <- function(run_times, chain_id, phase) {
     ylab("Run time (s)") + xlab("Chain ID") +
     theme(text = element_text(size = 16)) +
     scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9", "coral"))
+  
+  if (!is.null(integrator)) {
+    plot <- plot + facet_wrap(~integrator)
+  }
+
   plot
 }
 

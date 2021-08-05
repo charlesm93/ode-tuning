@@ -60,11 +60,11 @@ transformed parameters {
     real x[n_obs, n_cmt];
 
     if (!stiff_solver) {
-      x = integrate_ode_rk45(system, y0, t0, t[start[i]:end[i]], 
+      x = integrate_ode_rk45(system, y0, t0, t[start[i]:end[i]],
                              theta[, i], x_r, x_i,
                              rel_tol, abs_tol, max_num_steps);
     } else {
-      x = integrate_ode_bdf(system, y0, t0, t[start[i]:end[i]], 
+      x = integrate_ode_bdf(system, y0, t0, t[start[i]:end[i]],
                             theta[, i], x_r, x_i,
                             rel_tol, abs_tol, max_num_steps);
     }
@@ -81,7 +81,7 @@ model {
   Km_pop ~ lognormal(log(2.5), 3);
   sigma ~ normal(0, 1);
 
-  omega ~ lognormal(0.25, 0.1);  // CHECK
+  omega ~ lognormal(log(0.25), 0.1);  // CHECK
 
   theta[1, ] ~ lognormal(log(ka_pop), omega[1]);
   theta[2, ] ~ lognormal(log(V_pop), omega[2]);
