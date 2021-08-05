@@ -147,8 +147,10 @@ if (FALSE) {
                             chains = 4, parallel_chains = 4,
                             seed = stan_seed, max_treedepth = 11)
 
-  fit_attempt$save_object("output/fit_attempt_pop_rk45.RDS")
+  if (FALSE) fit_attempt$save_object("output/fit_attempt_pop_rk45.RDS")
 
+  if (FALSE) fit_attempt$save_object("output/fit_attempt_pop_c_rk45.RDS")
+  
   fit_attempt$time()
 }
 
