@@ -94,7 +94,7 @@ rstan_options(auto_write = TRUE)
 source("./utils/sim_pf.R")
 N1 = 1000       # maximum iters in optimization
 factr_tol = 1e2 
-N_sam_DIV = 3   # sample size for ELBO evaluation
+N_sam_DIV = 5   # sample size for ELBO evaluation
 N_sam = 100
 lmm = 6         # histogram size
 mc.cores = parallel::detectCores() - 2
@@ -117,8 +117,13 @@ if(fit_pathfinder){
   
   pick_samples_bdf <- Imp_Resam_WOR(opath_bdf, n_inits = 4, seed = 1)
   
-  pick_Hk <- est_inv_metric(opath_bdf) # poor estimate of the mass matrix
-  
+  # inverse metric estimation #
+  pick_ind <- select_normal_apx(opath_bdf)  # return the index of the best normal approximation
+  K_hat <- check_pareto_k(opath_bdf[[pick_ind]])   # conduct pareto k hat diagnostic
+  K_hat # 1.554636
+  pick_Hk <- est_inv_metric(opath_bdf) # estimate of the mass matrix
+  #pick_Hk <- opath_bdf[[pick_ind]]$sample_pkg_save$inv_metric_est # retrieve inverse metric estimate from a specific normal approximation
+
   posterior <- to_posterior(model, stan_data_bdf)
   init_pf = apply(pick_samples_bdf, 2, 
                   f <- function(x){constrain_pars(posterior, x)})
