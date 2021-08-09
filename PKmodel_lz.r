@@ -166,7 +166,7 @@ mcmc_trace(fit_pf_lit$draws(parms))
 
 saved_fit_pf_bdf_warmup_file <- paste0("./output/", model_name, ".pf_bdf_warmup.fit.RDS")
 saved_fit6_file <- paste0("./output/", model_name, ".pf_bdf_rk45.fit.RDS")
-if (run_model) {
+if (run_model_pf) {
   fit_pf_bdf_warmup <- mod$sample(
     data = stan_data_bdf, chains = nChains,
     parallel_chains = parallel_chains,
