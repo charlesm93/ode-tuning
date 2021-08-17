@@ -140,7 +140,7 @@ init0_files <- paste0("init/init_pop", 1:nChains, ".json")
 #####################################################################
 ## Fitmodel with bdf solver
 
-run_model <- TRUE  # FALSE
+run_model <- FALSE
 saved_fit0_file <- paste0("output/", model_name, "rk45")
 if (run_model) {
   fit0_warmups <- fit_warmup_phases(mod = mod,

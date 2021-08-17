@@ -54,7 +54,7 @@ N_sam_DIV = 5   # sample size for ELBO evaluation
 N_sam = 100
 lmm = 6         # histogram size
 mc.cores = parallel::detectCores() - 2
-MC = 20    
+MC = 8  # 20    
 init_bound = 2
 seed_list = 1:MC
 
@@ -119,7 +119,8 @@ if (run_model_pf) {
     iter_warmup = iter_warmup, iter_sampling = iter_sampling,
     seed = stan_seed, adapt_delta = 0.8,
     init = paste0("./init/initpfbdf_pop", 1:nChains, ".json"),
-    save_warmup = TRUE)
+    save_warmup = TRUE,
+    metric = metric)
   
   fit_pf$cmdstan_diagnose()
   
@@ -175,7 +176,9 @@ if (run_model_pf) {
     parallel_chains = parallel_chains,
     iter_warmup = iter_warmup, iter_sampling = 1,
     seed = stan_seed,
-    init = paste0("./init/initpfbdf_pop", 1:nChains, ".json"))
+    adapt_delta = 0.95,
+    init = paste0("./init/initpfbdf_pop", 1:nChains, ".json"),
+    metric = metric)
   
   fit_pf_bdf_warmup$save_object(saved_fit_pf_bdf_warmup_file)
   
@@ -196,7 +199,8 @@ if (run_model_pf) {
     seed = stan_seed,
     init = init_files,
     step_size = fit_pf_bdf_warmup$metadata()$step_size_adaptation,
-    inv_metric = fit_pf_bdf_warmup$inv_metric(matrix = F),
+    inv_metric = fit_pf_bdf_warmup$inv_metric(matrix = T),
+    metric = metric,
     # inv_metric = diag(mass_matrix[[1]])
     adapt_engaged = FALSE
   )

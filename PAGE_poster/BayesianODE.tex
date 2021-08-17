@@ -167,17 +167,17 @@ Effective sampling crucially depends on properly tuning HMC's sampling parameter
 %  \item $\epsilon$: the integrator's step size, which trades speed and accuracy when solving the equations of motions. \\ 
 %\end{itemize}
 %\ \\
-\textbf{Warmup phases of dynamic HMC} (e.g. for 500 iterations) \textbf{and Path Finder.} \\
+\textbf{Warmup phases of dynamic HMC} (e.g. for 500 iterations) \textbf{and Path Finder \cite{Zhang:2021}.} \\
 \begin{center}
   \begin{tabular}{b a | l}
-   & & \textbf{Prototype Path finder} (Figure 2) \\
+   & \textbf{Adaptive HMC} & \textbf{Prototype Path finder} (Figure 2) \\
   I & \tabitem starting at initialization, $\theta_0$, early exploration & \tabitem Construct optimization path between \\
   (75 iter) & \ \ \ \ with highly varying $\theta$. & \ \ \ \ $\theta_0$ and the mode of $p(\theta \mid y)$. \\
-  & \tabitem convergence to sampling region. & \tabitem Find sampling region along \\
-  & \tabitem initial tuning of the sampling parameters. & \ \ \ \ optimization path. \\
-  \hline II & \tabitem semi-stable exploration of sampling region. & (optional) \\  
-  (375 iter) & \tabitem more extensive tuning of sampling parameters, & \tabitem Use Normal approximation of $p(\theta \mid y)$ \\
-   & \ \ \ \ as we learn more about $p(\theta \mid y)$. & \ \ \ \ to tune sampling parameters. \\
+  & \tabitem convergence to sampling region. & \tabitem Find sampling region along path and \\
+  & \tabitem initial tuning of the sampling parameters. & \ \ \ \ initialize HMC Phase I. \\
+  \hline II & \tabitem semi-stable exploration of sampling region. & \tabitem Use variational approx. of $p(\theta \mid y)$ \\  
+  (375 iter) & \tabitem more extensive tuning of sampling parameters, & \ \ \ \ to tune sampling parameters.  \\
+   & \ \ \ \ as we learn more about $p(\theta \mid y)$. & \tabitem OR use Phase II of HMC.\\
   \hline III & \tabitem continued exploration of the sampling region. & \tabitem Use HMC's Phase III. \\ 
   (50 iter) & \tabitem final tuning of sampling parameters.
   \end{tabular}
@@ -190,7 +190,7 @@ Picking an ODE integrator which is suitable for all phases of HMC then becomes c
 
 \begin{center}
 \textbf{Figure 2.}
-\includegraphics[width = 4.5in]{../figures/pathfinder}
+\includegraphics[width = 4.5in]{../figures/pathfinder2}
 \end{center}
 
 \columnbreak
@@ -228,7 +228,7 @@ The full model, with parameters $\theta = \{k_a, V, V_m, K_m, \sigma\}$, is
 
 \includegraphics[width = 14.5in]{../figures/phase_time_facet_4x12.pdf}
 \textbf{Figure 2.} \textit{Model runtimes using a non-stiff Runge-Kutta $4^\text{th}/5^\text{th}$ (RK45) integrator and a stiff backward differentiation (BDF) integrator.
-For each integrator we run 8 chains (500 warmup + 500 sampling iterations) using Stan \cite{Carpenter:2017}.} \\
+For each integrator we run 8 chains (500 warmup + 500 sampling iterations) using Stan \cite{Stan:2021}.} \\
 
 %These results suggest no one integrator is optimal for all phases of HMC for this problem.
 %RK45 is on average faster but very unstable, particularly during the early stages of warmup.
@@ -239,14 +239,14 @@ Applying this heuristic, we propose the following schemes:
 
 \begin{center}
 \renewcommand{\arraystretch}{1.5}
-\begin{tabular}{r c c c c}
-  & \ \textbf{Phase I} \ & \ \textbf{Phase II} \ \ & \ \textbf{Phase III} \ & \ \textbf{Sampling} \ \\
-  \textbf{HMC warmup, early switch} & \cellcolor{Melon} BDF & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
-  \textbf{HMC warmup, late switch} & \cellcolor{Melon} BDF & \cellcolor{Melon} BDF &  \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
+\begin{tabular}{r c c c c c}
+  & \textbf{Pathfinding} & \ \textbf{Phase I} \ & \ \textbf{Phase II} \ \ & \ \textbf{Phase III} \ & \ \textbf{Sampling} \ \\
+  \textbf{HMC warmup, early switch} & NA & \cellcolor{Melon} BDF & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
+  \textbf{HMC warmup, late switch} & NA & \cellcolor{Melon} BDF & \cellcolor{Melon} BDF &  \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
   \hline
-  \textbf{Pathfinder warmup}  &\cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
-  \textbf{Pathfinder warmup, switch} & \cellcolor{Melon} BDF & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
-  \textbf{Pathfinder with normal approx.} & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45
+  \textbf{Pathfinder, RK45} & \cellcolor{Melon} BDF  & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
+  \textbf{Pathfinder, late switch} & \cellcolor{Melon} BDF & \cellcolor{Melon} BDF & \cellcolor{Melon} BDF & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45 \\
+  \textbf{Pathfinder, approx. tuning} & \cellcolor{Melon} BDF & NA & NA & \cellcolor{SkyBlue} RK45 & \cellcolor{SkyBlue} RK45
 \end{tabular}
 \end{center}
 
@@ -256,21 +256,21 @@ Applying this heuristic, we propose the following schemes:
 
 We run all five proposed sampling schemes, as well as HMC using only RK45 or BDF on the Michaelis-Menten model and a population version of it. \\
 
-\includegraphics[width = 12in]{../figures/performance.pdf} \\
+\includegraphics[width = 12in]{../figures/performance_4x8.pdf} \\
 \textbf{Figure 3.} \textit{Relaxation time, i.e. time to increase the effective sample size by 1, measured for $\log p(\theta, y)$. The orange crossed dot is the median time, and the red circled dot the worst time.
 For method which run 8 or more chains in parallel,  we may prefer consistency to good median performance.} \\
 
 \textbf{Model details.} The population model uses 3 patients, with partial pooling. 
 We tried a centered and non-centered parameterization, and reported the former which for this particular problem produced more effective sampling.
-We also found adapting a dense mass matrix for HMC worked better than using the default diagonal mass matrix. \\
+We also found adapting a dense mass matrix for HMC worked better than using the default diagonal mass matrix.
+The population uses 1,000 warmup and 1,000 sampling iterations. \\
 
-\textbf{Takeaways.} 
+\textbf{Results.} 
 
-\section*{Bibliography}
 
 {\footnotesize
 \bibliographystyle{abbrv}
-\bibliography{../ref_laplace}
+\bibliography{BayesianODE}
 }
 
 % \end{tabular}

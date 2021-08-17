@@ -57,8 +57,8 @@ factr_tol = 1e2
 N_sam_DIV = 5   # sample size for ELBO evaluation
 N_sam = 100
 lmm = 6         # histogram size
-mc.cores = parallel::detectCores() - 2
-MC = 20    
+mc.cores = parallel::detectCores() # - 2
+MC = 8  # 10  # 20    
 init_bound = 2
 seed_list = 1:MC
 
@@ -266,5 +266,3 @@ recorded_tau <- c(1 / ess_pf$chain_eff[parm_index, ],
 
 plot_data <- data.frame(method = method, tau = recorded_tau)
 write.csv(plot_data, paste0("plot_data/", model_name, ".pf.data.csv"))
-
-
