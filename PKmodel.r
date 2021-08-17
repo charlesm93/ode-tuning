@@ -116,11 +116,13 @@ init0_files <- paste0("init/init", 1:nChains, ".json")
 #####################################################################
 ## Fit model with rk45 solver.
 
-run_model <- TRUE
+run_model <- TRUE  # FALSE
 saved_fit0_file <- paste0("output/", model_name, "rk45")
+
 if (run_model) {
   fit0_warmups <- fit_warmup_phases(mod = mod, 
                                     model_name = model_name,
+                                    save_function = save_last_iter,
                                     data = stan_data_rk45,
                                     init = init0_files,
                                     iter_warmup = 500,
@@ -132,9 +134,10 @@ if (run_model) {
 
   fit0_warmups$fit_w1$save_object(paste0(saved_fit0_file, ".phase1.fit.RDS"))
   fit0_warmups$fit_w2$save_object(paste0(saved_fit0_file, ".phase2.fit.RDS"))
-  fit0_warmups$fit_w1$save_object(paste0(saved_fit0_file, ".phase3.fit.RDS"))
+  # ERROR: below should be fit_w3, not fit_w1 (FIXED 05/05)
+  fit0_warmups$fit_w3$save_object(paste0(saved_fit0_file, ".phase3.fit.RDS"))
   
-  samples_warmup <- fit0_warmups$fit_w1$draws()
+  samples_w1 <- fit0_warmups$fit_w1$draws()
   parm_index <- 2:6
   init_files <- save_last_iter(samples_w1, nChains, paste0(model_name, "_w3."),
                                parm_index)
@@ -153,6 +156,9 @@ if (run_model) {
   fit0$save_object(paste0(saved_fit0_file, ".RDS"))
 }
 
+fit0_w1 <- readRDS(paste0(saved_fit0_file, ".phase1.fit.RDS"))
+fit0_w2 <- readRDS(paste0(saved_fit0_file, ".phase2.fit.RDS"))
+fit0_w3 <- readRDS(paste0(saved_fit0_file, ".phase3.fit.RDS"))
 fit0 <- readRDS(paste0(saved_fit0_file, ".RDS"))
 
 
@@ -165,6 +171,7 @@ if (run_model) {
                                     model_name = paste0(model_name, "_bdf"),
                                     data = stan_data_bdf,
                                     init = init0_files,
+                                    save_function = save_last_iter,
                                     iter_warmup = 500,
                                     init_buffer = 75,
                                     term_buffer = 50,
@@ -174,7 +181,8 @@ if (run_model) {
   
   fit1_warmups$fit_w1$save_object(paste0(saved_fit1_file, ".phase1.fit.RDS"))
   fit1_warmups$fit_w2$save_object(paste0(saved_fit1_file, ".phase2.fit.RDS"))
-  fit1_warmups$fit_w1$save_object(paste0(saved_fit1_file, ".phase3.fit.RDS"))
+  # FIX ME -- below should fit_w3, not fit_w1 (fixed 05 / 05)
+  fit1_warmups$fit_w3$save_object(paste0(saved_fit1_file, ".phase3.fit.RDS"))
   
   samples_warmup <- fit1_warmups$fit_w1$draws()
   parm_index <- 2:6
@@ -196,6 +204,9 @@ if (run_model) {
   fit1$save_object(paste0(saved_fit1_file, ".RDS"))
 }
 
+fit1_w1 <- readRDS(paste0(saved_fit1_file, ".phase1.fit.RDS"))
+fit1_w2 <- readRDS(paste0(saved_fit1_file, ".phase2.fit.RDS"))
+fit1_w3 <- readRDS(paste0(saved_fit1_file, ".phase3.fit.RDS"))
 fit1 <- readRDS(paste0(saved_fit1_file, ".RDS"))
 
 #####################################################################
@@ -211,11 +222,14 @@ if (run_model) {
     init = init_files,
     step_size = fit1_warmups$fit_w3$metadata()$step_size_adaptation,
     inv_metric = fit1_warmups$fit_w3$inv_metric(matrix = F),
+    metric = metric,
     adapt_engaged = FALSE)
 
   fit2$save_object(paste0(saved_fit2_file, ".RDS"))
 }
 
+fit2 <- readRDS(paste0(saved_fit2_file, ".RDS"))
+  
 #####################################################################
 ## Run rk45 for phase 3 and sampling.
 saved_fit3_file <- paste0("output/", model_name, "rk45_cool")
@@ -230,7 +244,8 @@ if (run_model) {
                             init_buffer = 0, term_buffer = 50,
                             seed = 123,
                             step_size = fit1_warmups$fit_w2$metadata()$step_size_adaptation,
-                            inv_metric = fit1_warmups$fit_w2$inv_metric(matrix = F))
+                            inv_metric = fit1_warmups$fit_w2$inv_metric(matrix = F),
+                            metric = metric)
   
   fit_rk45_w3$save_object(paste0(saved_fit3_file, ".phase3.fit.RDS"))
   
@@ -242,10 +257,15 @@ if (run_model) {
     init = init_files,
     step_size = fit_rk45_w3$metadata()$step_size_adaptation,
     inv_metric = fit_rk45_w3$inv_metric(matrix = F),
+    metric = metric,
     adapt_engaged = FALSE)
 
   fit3$save_object(paste0(saved_fit3_file, ".RDS"))
 }
+
+fit3_w3 <- readRDS(paste0(saved_fit3_file, ".phase3.fit.RDS"))
+fit_rk45_w3 <- readRDS(paste0(saved_fit3_file, ".phase3.fit.RDS"))
+fit3 <- readRDS(paste0(saved_fit3_file, ".RDS"))
 
 #####################################################################
 # Make sure the posterior samples are consistent between methods.
@@ -283,17 +303,24 @@ plot
 
 ess_bulk <- fit0$summary()$ess_bulk[1:6]
 time0_total <- (fit0$time()$total +
-                fit0_warmups$fit_w1$time()$total +
-                fit0_warmups$fit_w2$time()$total +
-                fit0_warmups$fit_w3$time()$total)
+                fit0_w1$time()$total +
+                fit0_w2$time()$total +
+                fit0_w3$time()$total)
+# time0_total <- (fit0$time()$total +
+#                 fit0_warmups$fit_w1$time()$total +
+#                 fit0_warmups$fit_w2$time()$total +
+#                 fit0_warmups$fit_w3$time()$total)
 eff0 <- ess_bulk / time0_total
 
 
-bdf_warmup_time <- fit1_warmups$fit_w1$time()$total +
-                     fit1_warmups$fit_w2$time()$total +
-                     fit1_warmups$fit_w3$time()$total
-
+bdf_warmup_time <- fit1_w1$time()$total +
+                   fit1_w2$time()$total +
+                   fit1_w3$time()$total
+# bdf_warmup_time <- fit1_warmups$fit_w1$time()$total +
+#                      fit1_warmups$fit_w2$time()$total +
+#                      fit1_warmups$fit_w3$time()$total
 ess_bulk <- fit1$summary()$ess_bulk[1:6]
+
 time1_total <- fit1$time()$total + bdf_warmup_time
 eff1 <- ess_bulk / time1_total
 
@@ -303,9 +330,13 @@ eff2 <- ess_bulk2 / time2_total
 
 ess_bulk3 <- fit3$summary()$ess_bulk[1:6]
 time3_total <- fit3$time()$total +
-  fit1_warmups$fit_w1$time()$total +
-  fit1_warmups$fit_w2$time()$total +
+  fit1_w1$time()$total +
+  fit1_w2$time()$total +
   fit_rk45_w3$time()$total
+# time3_total <- fit3$time()$total +
+#   fit1_warmups$fit_w1$time()$total +
+#   fit1_warmups$fit_w2$time()$total +
+#   fit_rk45_w3$time()$total
 eff3 <- ess_bulk3 / time3_total
 
 eff <- c(eff0, eff1, eff2, eff3)
@@ -329,15 +360,22 @@ plot
 
 parm_index <- 1
 
+# time0 <- (fit0$time()$chains[, 4] +
+#             fit0_warmups$fit_w1$time()$chains[, 4] +
+#             fit0_warmups$fit_w2$time()$chains[, 4] +
+#             fit0_warmups$fit_w3$time()$chains[, 4])
 time0 <- (fit0$time()$chains[, 4] +
-            fit0_warmups$fit_w1$time()$chains[, 4] +
-            fit0_warmups$fit_w2$time()$chains[, 4] +
-            fit0_warmups$fit_w3$time()$chains[, 4])
+            fit0_w1$time()$chains[, 4] +
+            fit0_w2$time()$chains[, 4] +
+            fit0_w3$time()$chains[, 4])
 ess0 <- ess_summary(fit = fit0, parms, nChains, time0)
 
-bdf_warmup_time <- fit1_warmups$fit_w1$time()$chains[, 4] +
-  fit1_warmups$fit_w2$time()$chains[, 4] +
-  fit1_warmups$fit_w3$time()$chains[, 4]
+bdf_warmup_time <- fit1_w1$time()$chains[, 4] +
+  fit1_w2$time()$chains[, 4] +
+  fit1_w3$time()$chains[, 4]
+# bdf_warmup_time <- fit1_warmups$fit_w1$time()$chains[, 4] +
+#   fit1_warmups$fit_w2$time()$chains[, 4] +
+#   fit1_warmups$fit_w3$time()$chains[, 4]
 
 time1 <- fit1$time()$chains[, 4] + bdf_warmup_time
 ess1 <- ess_summary(fit = fit1, parms, nChains, time1)
@@ -345,8 +383,11 @@ ess1 <- ess_summary(fit = fit1, parms, nChains, time1)
 time2 <- fit2$time()$chains[, 4] + bdf_warmup_time
 ess2 <- ess_summary(fit = fit2, parms, nChains, time2)
 
-time3 <- fit3$time()$chains[, 4] + fit1_warmups$fit_w1$time()$chains[, 4] +
-  fit1_warmups$fit_w2$time()$chains[, 4] +
+# time3 <- fit3$time()$chains[, 4] + fit1_warmups$fit_w1$time()$chains[, 4] +
+#   fit1_warmups$fit_w2$time()$chains[, 4] +
+#   fit_rk45_w3$time()$chains[, 4]
+time3 <- fit3$time()$chains[, 4] + fit1_w1$time()$chains[, 4] +
+  fit1_w2$time()$chains[, 4] +
   fit_rk45_w3$time()$chains[, 4]
 ess3 <- ess_summary(fit = fit3, parms, nChains, time3)
 
@@ -355,7 +396,7 @@ recorded_eff <- c(ess0$chain_eff[parm_index, ],
                   ess2$chain_eff[parm_index, ],
                   ess3$chain_eff[parm_index, ])
 
-method_names <- c("rk45", "bdf", "warm start", "cool start")
+method_names <- c("RK45", "BDF", "Late switch", "Early switch")
 method <- rep(method_names, each = nChains)
 method <- factor(method, levels = method_names)
 
@@ -365,15 +406,25 @@ plot <- ggplot(data = data.frame(method = method, eff = recorded_eff),
 plot
 
 # compute the relaxation time
-recorded_tau <- c(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ],
-                  ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ],
-                  ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ],
-                  ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ])
+# recorded_tau <- c(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ],
+#                   ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ],
+#                   ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ],
+#                   ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ])
+# 
+# median_tau <- c(median(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ]),
+#                 median(ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ]),
+#                 median(ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ]),
+#                 median(ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ]))
 
-median_tau <- c(median(ess0$chain_ess[parm_index, ] / ess0$chain_eff[parm_index, ]),
-                median(ess1$chain_ess[parm_index, ] / ess1$chain_eff[parm_index, ]),
-                median(ess2$chain_ess[parm_index, ] / ess2$chain_eff[parm_index, ]),
-                median(ess3$chain_ess[parm_index, ] / ess3$chain_eff[parm_index, ]))
+recorded_tau <- c(1 / ess0$chain_eff[parm_index, ],
+                  1 / ess1$chain_eff[parm_index, ],
+                  1 / ess2$chain_eff[parm_index, ],
+                  1 / ess3$chain_eff[parm_index, ])
+
+median_tau <- c(median(1 / ess0$chain_eff[parm_index, ]),
+                median(1 / ess1$chain_eff[parm_index, ]),
+                median(1 / ess2$chain_eff[parm_index, ]),
+                median(1 / ess3$chain_eff[parm_index, ]))
 
 plot_data <- data.frame(method = method, tau = recorded_tau)
 
@@ -393,8 +444,28 @@ plot <- ggplot(data = plot_data,
            aes(x = method[3 * nChains + 1], y = median_tau[4]),
            alpha = 0.01, width = 0.3) +
   theme(text = element_text(size = 16))
-  
 plot
+
+# To capture outliers, want to use plot on the log scale.
+plot <- ggplot(data = plot_data,
+               aes(x = method, y = tau)) + theme_bw() +
+  geom_point() + scale_y_continuous(trans = 'log10') +
+  geom_point(aes(x = method[1], y = median_tau[1]), shape = 13,
+             size = 3, color = "orange") +
+  geom_point(aes(x = method[nChains + 1], y = median_tau[2]), shape = 13,
+             size = 3, color = "orange") +
+  geom_point(aes(x = method[2 * nChains + 1], y = median_tau[3]), shape = 13,
+             size = 3, color = "orange") +
+  geom_point(aes(x = method[3 * nChains + 1], y = median_tau[4]), shape = 13,
+             size = 3, color = "orange") +
+  ylab("Relaxation time (s)") + xlab("") + coord_flip() +
+  theme(text = element_text(size = 16))
+plot
+
+# Write data for plot
+write.csv(plot_data, paste0("plot_data/", model_name, ".data.csv"))
+write.csv(median_tau, paste0("plot_data/", model_name,"_tau_median",
+                             ".data.csv"))
 
 #####################################################################
 ## Additional plots (for presentation)
@@ -412,25 +483,42 @@ plot <- ggplot(data = plot_data[method == "rk45" | method == "bdf", ],
 plot
 
 
-time0_data <- c(fit0_warmups$fit_w1$time()$chains[, 4],
-                fit0_warmups$fit_w2$time()$chains[, 4],
-                fit0_warmups$fit_w3$time()$chains[, 4],
+# time0_data <- c(fit0_warmups$fit_w1$time()$chains[, 4],
+#                 fit0_warmups$fit_w2$time()$chains[, 4],
+#                 fit0_warmups$fit_w3$time()$chains[, 4],
+#                 fit0$time()$chains[, 4])
+time0_data <- c(fit0_w1$time()$chains[, 4],
+                fit0_w2$time()$chains[, 4],
+                fit0_w3$time()$chains[, 4],
                 fit0$time()$chains[, 4])
 
-time1_data <- c(fit1_warmups$fit_w1$time()$chains[, 4],
-                fit1_warmups$fit_w2$time()$chains[, 4],
-                fit1_warmups$fit_w3$time()$chains[, 4],
+# time1_data <- c(fit1_warmups$fit_w1$time()$chains[, 4],
+#                 fit1_warmups$fit_w2$time()$chains[, 4],
+#                 fit1_warmups$fit_w3$time()$chains[, 4],
+#                 fit1$time()$chains[, 4])
+time1_data <- c(fit1_w1$time()$chains[, 4],
+                fit1_w2$time()$chains[, 4],
+                fit1_w3$time()$chains[, 4],
                 fit1$time()$chains[, 4])
 
 chain_id <- rep(1:nChains, 4)
-phase <- rep(c("Phase 1", "Phase 2", "Phase 3", "sampling"), each = nChains)
-phase <- factor(phase, levels = c("sampling", "Phase 3", "Phase 2", "Phase 1"))
+phase <- rep(c("phase 1", "phase 2", "phase 3", "sampling"), each = nChains)
+phase <- factor(phase, levels = c("sampling", "phase 3", "phase 2", "phase 1"))
+# phase <- factor(phase, levels = c("phase 1", "phase 2", "phase 3", "sampling"))
 
 plot_phase_time(run_times = time0_data, chain_id, phase) 
 plot_phase_time(run_times = time1_data, chain_id, phase)
 
-# TODO: change color scheme of ggplot2
+# Put plots together for PAGE poster
+time_all_data <- c(time0_data, time1_data)
+chain_id_all <- c(chain_id, chain_id)
+phase_all <- c(phase, phase)
+integrator <- c(rep("RK45", length(time0_data)),
+                rep("BDF", length(time0_data)))
 
+plot_phase_time(time_all_data, chain_id, phase, integrator)
+
+# TODO: change color scheme of ggplot2
 if (FALSE) {
   plot_run_time(fit0) + ylim(0, 125)
   plot_run_time(fit) + ylim(0, 125)
@@ -438,5 +526,3 @@ if (FALSE) {
   plot_run_time(fit2)
   plot_run_time(fit3)
 }
-
-

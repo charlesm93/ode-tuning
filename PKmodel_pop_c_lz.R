@@ -3,8 +3,9 @@ rm(list = ls())
 gc()
 set.seed(1954)
 
-#setwd("~/Code/ode-tuning")
-#.libPaths("~/Rlib/")
+# Adjust to your setting
+setwd("~/Code/ode-tuning")
+.libPaths("~/Rlib/")
 
 library(ggplot2)
 library(cmdstanr)
@@ -16,6 +17,7 @@ library(bayesplot)
 source("tools.r")
 
 model_name <- "Michaelis_MentenPK_pop_centered"
+# model_name <- "Michaelis_MentenPK_pop"
 
 #####################################################################
 ## load Simulate data
@@ -60,7 +62,7 @@ model <- stan_model(file)
 
 #######################################################################
 ## fit with pathfinder ##
-fit_pathfinder = FALSE
+fit_pathfinder = TRUE  # FALSE
 if(fit_pathfinder){
   
   t <- proc.time()
@@ -106,7 +108,7 @@ if(fit_pathfinder){
 
 
 ## Fit model with rk45 solver and initials suggested by pathfinder
-run_model_pf <- FALSE
+run_model_pf <- TRUE # FALSE
 saved_fit_pf_file <- paste0("./output/", model_name, ".rk45pf.fit.RDS")
 load(paste0("./output/pf_warm_time_pop.RData"))
 
@@ -167,7 +169,7 @@ mcmc_trace(fit_pf_lit$draws(parms))
 
 saved_fit_pf_bdf_warmup_file <- paste0("./output/", model_name, ".pf_bdf_warmup.fit.RDS")
 saved_fit6_file <- paste0("./output/", model_name, ".pf_bdf_rk45.fit.RDS")
-if (run_model) {
+if (run_model_pf) {
   fit_pf_bdf_warmup <- mod$sample(
     data = stan_data_bdf, chains = nChains,
     parallel_chains = parallel_chains,
@@ -238,4 +240,19 @@ time_pf_bdf_rk45 <- time_pf_bdf_warmup + time_rk45_sampling
 ess_pf_bdf_rk45 <- ess_summary_2(fit = fit6, parms, nChains, time_pf_bdf_rk45)
 1 / ess_pf_bdf_rk45$chain_eff[parm_index,]
 # 1.594780 1.942493 1.447381 1.556838 1.814276 1.398494 1.890933 2.324157
+
+# save data
+method_names <- c("Pf, RK45",
+                  "Pf, approx tuning",
+                  "Pf, late switch")
+method <- rep(method_names, each = nChains)
+method <- factor(method, levels = method_names)
+
+recorded_tau <- c(1 / ess_pf$chain_eff[parm_index, ],
+                  1 / ess_pf_lit$chain_eff[parm_index, ],
+                  1 / ess_pf_bdf_rk45$chain_eff[parm_index,])
+
+plot_data <- data.frame(method = method, tau = recorded_tau)
+write.csv(plot_data, paste0("plot_data/", model_name, ".pf.data.csv"))
+
 

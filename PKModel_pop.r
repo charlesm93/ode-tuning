@@ -140,7 +140,7 @@ init0_files <- paste0("init/init_pop", 1:nChains, ".json")
 #####################################################################
 ## Fitmodel with bdf solver
 
-run_model <- FALSE
+run_model <- TRUE  # FALSE
 saved_fit0_file <- paste0("output/", model_name, "rk45")
 if (run_model) {
   fit0_warmups <- fit_warmup_phases(mod = mod,
@@ -155,7 +155,7 @@ if (run_model) {
                                     nChains = nChains,
                                     seed = stan_seed,
                                     metric = metric,
-                                    adapt_delta = 0.9)
+                                    adapt_delta = 0.95)
 
   fit0_warmups$fit_w1$save_object(paste0(saved_fit0_file, ".phase1.fit.RDS"))
   fit0_warmups$fit_w2$save_object(paste0(saved_fit0_file, ".phase2.fit.RDS"))
@@ -170,7 +170,7 @@ if (run_model) {
     data = stan_data_rk45, chains = nChains,
     parallel_chains = parallel_chains,
     iter_warmup = 0, iter_sampling = iter_sampling,
-    seed = stan_seed + 1, adapt_delta = 0.8,
+    seed = stan_seed + 1, adapt_delta = 0.95,
     init = init_files,
     metric = metric,
     step_size = fit0_warmups$fit_w3$metadata()$step_size_adaptation,
@@ -203,7 +203,7 @@ if (run_model) {
                                     nChains = nChains,
                                     seed = stan_seed,
                                     metric = metric,
-                                    adapt_delta = 0.9)
+                                    adapt_delta = 0.99)
   
   fit1_warmups$fit_w1$save_object(paste0(saved_fit1_file, ".phase1.fit.RDS"))
   fit1_warmups$fit_w2$save_object(paste0(saved_fit1_file, ".phase2.fit.RDS"))
@@ -269,7 +269,7 @@ if (run_model) {
                             iter_warmup = 50, window = 0,
                             init_buffer = 0, term_buffer = 50,
                             seed = 123,
-                            adapt_delta = 0.9,
+                            adapt_delta = 0.95,
                             step_size = fit1_warmups$fit_w2$metadata()$step_size_adaptation,
                             inv_metric = fit1_warmups$fit_w2$inv_metric(matrix = F),
                             metric = metric)

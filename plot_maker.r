@@ -5,31 +5,59 @@ setwd("/Users/charlesm/Code/ode-tuning")
 library(ggplot2)
 
 model_name <- "Michaelis_MentenPK"
-plot_data_single <- read.csv(paste0("plot_data/", model_name, ".data.csv"))
+plot_data_single_hmc <- read.csv(paste0("plot_data/", model_name, ".data.csv"))
+plot_data_single_pf <- read.csv(paste0("plot_data/", model_name, ".pf.data.csv"))
+plot_data_single <- rbind(plot_data_single_hmc, plot_data_single_pf)
+
 median_tau_single <- read.csv(paste0("plot_data/", model_name,"_tau_median",
                               ".data.csv"))$x
+
+median_tau_single <- c(median_tau_single,
+                       median(plot_data_single$tau[plot_data_single$method == "Pf, RK45"]),
+                       median(plot_data_single$tau[plot_data_single$method == "Pf, approx tuning"]),
+                       median(plot_data_single$tau[plot_data_single$method == "Pf, late switch"])
+                       )
 
 max_tau_single <- c(max(plot_data_single$tau[plot_data_single$method == "RK45"]),
                     max(plot_data_single$tau[plot_data_single$method == "BDF"]),
                     max(plot_data_single$tau[plot_data_single$method == "Late switch"]),
-                    max(plot_data_single$tau[plot_data_single$method == "Early switch"]))
+                    max(plot_data_single$tau[plot_data_single$method == "Early switch"]),
+                    max(plot_data_single$tau[plot_data_single$method == "Pf, RK45"]),
+                    max(plot_data_single$tau[plot_data_single$method == "Pf, approx tuning"]),
+                    max(plot_data_single$tau[plot_data_single$method == "Pf, late switch"])
+                    )
 
 model_name <- "Michaelis_MentenPK_pop_centered"
-plot_data_pop <- read.csv(paste0("plot_data/", model_name, ".data.csv"))
+plot_data_pop_hmc <- read.csv(paste0("plot_data/", model_name, ".data.csv"))
+plot_data_pop_pf <- read.csv(paste0("plot_data/", model_name, ".pf.data.csv"))
+plot_data_pop <- rbind(plot_data_pop_hmc, plot_data_pop_pf)
+
+
 median_tau_pop <- read.csv(paste0("plot_data/", model_name,"_tau_median",
                                      ".data.csv"))$x
+
+median_tau_pop <- c(median_tau_pop,
+                    median(plot_data_pop$tau[plot_data_single$method == "Pf, RK45"]),
+                    median(plot_data_pop$tau[plot_data_single$method == "Pf, approx tuning"]),
+                    median(plot_data_pop$tau[plot_data_single$method == "Pf, late switch"])
+)
 
 max_tau_pop <- c(max(plot_data_pop$tau[plot_data_pop$method == "RK45"]),
                  max(plot_data_pop$tau[plot_data_pop$method == "BDF"]),
                  max(plot_data_pop$tau[plot_data_pop$method == "Late switch"]),
-                 max(plot_data_pop$tau[plot_data_pop$method == "Early switch"]))
+                 max(plot_data_pop$tau[plot_data_pop$method == "Early switch"]),
+                 max(plot_data_pop$tau[plot_data_pop$method == "Pf, RK45"]),
+                 max(plot_data_pop$tau[plot_data_pop$method == "Pf, approx tuning"]),
+                 max(plot_data_pop$tau[plot_data_pop$method == "Pf, late switch"]))
 
 plot_data_all <- rbind(plot_data_single, plot_data_pop)
 plot_data_all$model <- rep(factor(c("Single", "Population"), 
                                   levels = c("Single", "Population")),
                            each = dim(plot_data_single)[1])
 plot_data_all$method <- factor(plot_data_all$method, 
-                levels = c("RK45", "BDF", "Late switch", "Early switch"))
+                levels = c("RK45", "BDF", "Late switch", "Early switch",
+                           "Pf, RK45", "Pf, approx tuning", "Pf, late switch"))
+
 plot_data_all$median_tau <- c(rep(median_tau_single, each = 8),
                               rep(median_tau_pop, each = 8))
 plot_data_all$max_tau <- c(rep(max_tau_single, each = 8),

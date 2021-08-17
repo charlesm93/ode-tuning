@@ -1,14 +1,20 @@
 
 rm(list = ls())
 gc()
+
+# Adjust to your settings
+.libPaths("~/Rlib/")
+setwd("~/Code/ode-tuning")
+
 library(ggplot2)
 library(cmdstanr)
-#set_cmdstan_path("~/Rlib/cmdstan/")
+set_cmdstan_path("~/Rlib/cmdstan/")
 library(rjson)
 library(posterior)
 library(deSolve)
 library(bayesplot)
 source("tools.r")
+
 
 set.seed(1954) 
 
@@ -18,7 +24,7 @@ set.seed(1954)
 model_name <- "Michaelis_MentenPK"
 
 #####################################################################
-## Simulate data
+## Read in data
 
 stan_data_rk45 <- fromJSON(file = "./data/PKModel.data.json")
 stan_data_rk45$stiff_solver <- 0
@@ -60,7 +66,7 @@ model <- stan_model(file)
 
 #######################################################################
 ## fit with pathfinder ##
-fit_pathfinder = FALSE
+fit_pathfinder =  TRUE
 if(fit_pathfinder){
   
   t <- proc.time()
@@ -105,7 +111,7 @@ if(fit_pathfinder){
 }
 
 ## Fit model with rk45 solver and initials suggested by pathfinder
-run_model_pf <- FALSE
+run_model_pf <- TRUE # FALSE
 saved_fit_pf_file <- paste0("./output/", model_name, ".rk45pf.fit.RDS")
 load(paste0("./output/pf_warm_time.RData"))
 
@@ -220,6 +226,7 @@ fit6$time()
 # Central and worse-case scenario metrics don't tell the whole story.
 # Let's plot all the points (for one "representative parameter")
 # Need now to extract the run time per chain.
+# We'll compute the relaxation time.
 
 parm_index <- 6 # check the relax time for log-density
 
@@ -227,15 +234,15 @@ parm_index <- 6 # check the relax time for log-density
 time_pf <- (fit_pf$time()$chains[, 4]) + pf_bdf_time[3]
 ess_pf <- ess_summary_2(fit = fit_pf, parms, nChains, time_pf)
 
-1/ess_pf$chain_eff[parm_index, ]
+1 / ess_pf$chain_eff[parm_index, ]
 # 0.3130230 0.1304897 0.1956402 0.4114854 0.1892039 0.1079107 0.2400757 0.2050909
 
 ## Fit model with rk45 solver and initials and inv-metric suggested by pathfinder
 time_pf_lit <- (fit_pf_lit$time()$chains[, 4]) + pf_bdf_time[3]
 ess_pf_lit <- ess_summary_2(fit = fit_pf_lit, parms, nChains, time_pf_lit)
 
-1/ess_pf_lit$chain_eff[parm_index, ]
-#0.04501421 0.03948521 0.04826716 0.23032500 0.03900221 0.05319730 0.03109815 0.02974186
+1 / ess_pf_lit$chain_eff[parm_index, ]
+# 0.04501421 0.03948521 0.04826716 0.23032500 0.03900221 0.05319730 0.03109815 0.02974186
 
 ## initial from pf, warm-up with BDF, sample with rk45
 time_pf_bdf_warmup <- pf_bdf_time[3] + fit_pf_bdf_warmup$time()$chains[, 4]
@@ -244,3 +251,20 @@ time_pf_bdf_rk45 <- time_pf_bdf_warmup + time_rk45_sampling
 ess_pf_bdf_rk45 <- ess_summary_2(fit = fit6, parms, nChains, time_pf_bdf_rk45)
 1 / ess_pf_bdf_rk45$chain_eff[parm_index,]
 # 0.1801720 1.8589807 0.1940273 0.3380813 0.1989379 0.1422849 0.2043724 0.2572273
+
+
+# save data
+method_names <- c("Pf, RK45",
+                  "Pf, approx tuning",
+                  "Pf, late switch")
+method <- rep(method_names, each = nChains)
+method <- factor(method, levels = method_names)
+
+recorded_tau <- c(1 / ess_pf$chain_eff[parm_index, ],
+                  1 / ess_pf_lit$chain_eff[parm_index, ],
+                  1 / ess_pf_bdf_rk45$chain_eff[parm_index,])
+
+plot_data <- data.frame(method = method, tau = recorded_tau)
+write.csv(plot_data, paste0("plot_data/", model_name, ".pf.data.csv"))
+
+
