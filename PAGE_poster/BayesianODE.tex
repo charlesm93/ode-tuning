@@ -67,6 +67,8 @@
   \end{flushleft}
 }
 
+\rightlogo[0.5]{logo/stanLogo.png}  % same but on right
+
 % to color column
 \usepackage{colortbl}
 
@@ -167,10 +169,10 @@ Effective sampling crucially depends on properly tuning HMC's sampling parameter
 %  \item $\epsilon$: the integrator's step size, which trades speed and accuracy when solving the equations of motions. \\ 
 %\end{itemize}
 %\ \\
-\textbf{Warmup phases of dynamic HMC} (e.g. for 500 iterations) \textbf{and Path Finder \cite{Zhang:2021}.} \\
+\textbf{Warmup phases of dynamic HMC} (e.g. for 500 iterations) \textbf{and prototype Path Finder.} \\
 \begin{center}
   \begin{tabular}{b a | l}
-   & \textbf{Adaptive HMC} & \textbf{Prototype Path finder} (Figure 2) \\
+   & \textbf{Adaptive HMC} & \textbf{Prototype Path finder} \\
   I & \tabitem starting at initialization, $\theta_0$, early exploration & \tabitem Construct optimization path between \\
   (75 iter) & \ \ \ \ with highly varying $\theta$. & \ \ \ \ $\theta_0$ and the mode of $p(\theta \mid y)$. \\
   & \tabitem convergence to sampling region. & \tabitem Find sampling region along path and \\
@@ -185,8 +187,10 @@ Effective sampling crucially depends on properly tuning HMC's sampling parameter
 
 \setlength{\columnseprule}{0pt}
 \begin{multicols}{2}
-\textbf{Challenge.} As $\theta$ changes, so can the behavior of the ODE in our model (Figure 1).
-Picking an ODE integrator which is suitable for all phases of HMC then becomes challenging.
+\textbf{Challenge.} As $\theta$ changes, so can the behavior of the ODE in our model (Figure 1). \\
+
+\textbf{Pathfinder \cite{Zhang:2021}.} The pathfinder offers alternative options for warming up HMC by (i) improving initialization
+and (ii) estimating certain sampling parameters. (Figure 2)
 
 \begin{center}
 \textbf{Figure 2.}
@@ -227,8 +231,8 @@ The full model, with parameters $\theta = \{k_a, V, V_m, K_m, \sigma\}$, is
 \textbf{Which ODE integrator should we use?} \\
 
 \includegraphics[width = 14.5in]{../figures/phase_time_facet_4x12.pdf}
-\textbf{Figure 2.} \textit{Model runtimes using a non-stiff Runge-Kutta $4^\text{th}/5^\text{th}$ (RK45) integrator and a stiff backward differentiation (BDF) integrator.
-For each integrator we run 8 chains (500 warmup + 500 sampling iterations) using Stan \cite{Stan:2021}.} \\
+\textbf{Figure 2.} \textit{Model runtimes using a stiff backward differentiation (BDF) integrator and a non-stiff Runge-Kutta $4^\text{th}/5^\text{th}$ (RK45) integrator.
+For each integrator we run 8 HMC chains (500 warmup + 500 sampling iterations) using Stan \cite{Stan:2021}.} \\
 
 %These results suggest no one integrator is optimal for all phases of HMC for this problem.
 %RK45 is on average faster but very unstable, particularly during the early stages of warmup.
@@ -254,7 +258,8 @@ Applying this heuristic, we propose the following schemes:
 
 \section*{Performance Study}
 
-We run all five proposed sampling schemes, as well as HMC using only RK45 or BDF on the Michaelis-Menten model and a population version of it. \\
+We run all five proposed sampling schemes, as well as HMC using only RK45 or BDF on the Michaelis-Menten model and a population version of it.
+The inference they produce are all in agreement. \\
 
 \includegraphics[width = 12in]{../figures/performance_4x8.pdf} \\
 \textbf{Figure 3.} \textit{Relaxation time, i.e. time to increase the effective sample size by 1, measured for $\log p(\theta, y)$. The orange crossed dot is the median time, and the red circled dot the worst time.
@@ -265,7 +270,15 @@ We tried a centered and non-centered parameterization, and reported the former w
 We also found adapting a dense mass matrix for HMC worked better than using the default diagonal mass matrix.
 The population uses 1,000 warmup and 1,000 sampling iterations. \\
 
-\textbf{Results.} 
+\textbf{Results.}
+\tabitem For the single patient model, using BDF during the warmup phase improves the stability of the sampler.
+Improved initialization do not warrant the additional cost of running the pathfinder;
+however estimating tuning parameters based on the variational approximation produces the most efficient sampler.
+Improved implementation can further increase the benefits of the pathfinder.
+
+\tabitem For the population model, we suspect the additional data stabilizes the posterior distribution, making uniform RK45 the best option.
+For this model, running the pathfinder is expansive and the estimated tuning parameter is suboptimal
+(we can diagnose this with the Pareto smooth importance sampling \cite{Zhang:2021}).
 
 
 {\footnotesize
